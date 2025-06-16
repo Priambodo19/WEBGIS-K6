@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WebGIS Yogyakarta</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    .container-fluid {
+      display: flex;
+      height: 100vh;
+    }
+
+    #sidebar {
+      width: 350px;
+      background-image: url('https://media.istockphoto.com/id/1126678768/id/vektor/vector-mulus-bunga-gaya-india-pola-pada-latar-belakang-putih.jpg?s=612x612&w=0&k=20&c=yjPUGVNgjOTq7TIaSz_pIh0fvhFD7QsckcK6GWlLcTM=');
+      background-size: cover;
+      background-repeat: repeat;
+      background-position: center;
+      position: relative;
+      padding: 20px;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    #sidebar::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 0;
+    }
+
+    #sidebar-top, #sidebar-bottom {
+      position: relative;
+      z-index: 1;
+    }
+
+    #sidebar-top {
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    #sidebar-bottom {
+      padding-top: 10px;
+      margin-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+      color: #f0f0f0;
+    }
+
+    .sidebar-content {
+      position: relative;
+      z-index: 1;
+      flex-grow: 1;
+      overflow-y: auto;
+      padding-top: 10px;
+    }
+
+    .nav-link {
+      color: white;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 5px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      text-decoration: none;
+      display: block;
+      font-weight: 500;
+    }
+
+    .nav-link:hover {
+      background-color: rgba(255, 255, 255, 0.3);
+    }
+
+    #map {
+      flex: 1;
+    }
+
+    .submenu {
+      padding-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <div id="sidebar">
+      <div id="sidebar-top">
+        <h4>🧭 WebGIS Yogyakarta</h4>
+      </div>
+
+      <div class="sidebar-content">
+        <a href="#" class="nav-link" onclick="toggleEditMenu()">🛠️ Menu Edit</a>
+        <div id="editMenu" class="submenu" style="display: none;">
+          <a href="#" class="nav-link" onclick="toggleBuffer()">🟢 Buffer: <span id="bStatus">OFF</span></a>
+          <a href="#" class="nav-link" onclick="toggleMeasure()">📏 Ukur Jarak: <span id="mStatus">OFF</span></a>
+          <a href="#" class="nav-link" onclick="toggleMarker()">📍 Marker Titik: <span id="tStatus">OFF</span></a>
+        </div>
+        <hr>
+        <a href="#" class="nav-link" onclick="locateUser()">📌 Lokasi Saya</a>
+      </div>
+
+      <div id="sidebar-bottom">
+        <small>📅 Dibuat oleh: 
+      <strong></strong><br>
+      <strong>Kelompok 6</strong><br>
+      <strong>Gatot Priambodo       117210069</strong><br>
+      <strong>Hafizh Ryan Ramadhan  117220033</strong><br>
+      <strong>Aris Baha Y. Sinaga   117220057</strong><br>
+        🧑‍💻 Tahun: 2025<br>
+        🌐 Proyek WebGIS DIY</small>
+      </div>
+    </div>
+
+    <div id="map"></div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map("map").setView([-7.8014, 110.3647], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap"
+    }).addTo(map);
+
+    let bufferActive = false, measureActive = false, markerActive = false;
+    let bufferLayer = L.layerGroup().addTo(map);
+    let markerLayer = L.layerGroup().addTo(map);
+    let measureLayer = L.layerGroup().addTo(map);
+    let tempLine = null, pointA = null;
+
+    function toggleEditMenu() {
+      const menu = document.getElementById("editMenu");
+      menu.style.display = menu.style.display === "none" ? "block" : "none";
+    }
+
+    function toggleBuffer() {
+      bufferActive = !bufferActive;
+      measureActive = markerActive = false;
+      updateStatus();
+    }
+
+    function toggleMeasure() {
+      measureActive = !measureActive;
+      bufferActive = markerActive = false;
+      pointA = null;
+      if (tempLine) { measureLayer.removeLayer(tempLine); tempLine = null; }
+      updateStatus();
+    }
+
+    function toggleMarker() {
+      markerActive = !markerActive;
+      bufferActive = measureActive = false;
+      updateStatus();
+    }
+
+    function updateStatus() {
+      document.getElementById("bStatus").innerText = bufferActive ? "ON" : "OFF";
+      document.getElementById("mStatus").innerText = measureActive ? "ON" : "OFF";
+      document.getElementById("tStatus").innerText = markerActive ? "ON" : "OFF";
+    }
+
+    map.on("click", function (e) {
+      if (bufferActive) {
+        let radius = prompt("Masukkan radius buffer (meter):", "500");
+        if (radius === null || isNaN(radius) || radius < 0) return;
+        radius = parseFloat(radius);
+        const circle = L.circle(e.latlng, {
+          radius: radius,
+          color: "red",
+          fillColor: "#ffff66",
+          fillOpacity: 0.4
+        }).addTo(bufferLayer);
+        const id = circle._leaflet_id;
+        circle.bindPopup(`
+          <b>Buffer</b><br>Radius: ${radius} m<br>
+          <button onclick="editBuffer(${id})">Edit Radius</button><br>
+          <button onclick="deleteBuffer(${id})">Hapus</button>
+        `).openPopup();
+      } else if (measureActive) {
+        if (!pointA) {
+          pointA = e.latlng;
+          L.marker(pointA).addTo(measureLayer).bindPopup("Titik A").openPopup();
+        } else {
+          const pointB = e.latlng;
+          const distance = pointA.distanceTo(pointB);
+          const km = (distance / 1000).toFixed(2);
+          const m = Math.round(distance);
+          tempLine = L.polyline([pointA, pointB], { color: "blue" }).addTo(measureLayer)
+            .bindPopup(`Jarak: ${m} m (${km} km)<br><button onclick="hapusGaris()">Hapus</button>`).openPopup();
+          pointA = null;
+        }
+      } else if (markerActive) {
+        const marker = L.marker(e.latlng, { draggable: true }).addTo(markerLayer);
+        const id = marker._leaflet_id;
+        marker.bindPopup(`
+          <b>Marker</b><br>
+          <button onclick="deleteMarker(${id})">Hapus</button>
+        `).openPopup();
+      }
+    });
+
+    function editBuffer(id) {
+      const layer = bufferLayer.getLayer(id);
+      let newRadius = prompt("Radius baru (meter):", layer.getRadius());
+      if (newRadius === null || isNaN(newRadius) || newRadius < 0) return;
+      layer.setRadius(parseFloat(newRadius));
+      layer.setPopupContent(`
+        <b>Buffer</b><br>Radius: ${newRadius} m<br>
+        <button onclick="editBuffer(${id})">Edit Radius</button><br>
+        <button onclick="deleteBuffer(${id})">Hapus</button>
+      `);
+    }
+
+    function deleteBuffer(id) {
+      bufferLayer.removeLayer(bufferLayer.getLayer(id));
+    }
+
+    function deleteMarker(id) {
+      markerLayer.removeLayer(markerLayer.getLayer(id));
+    }
+
+    function hapusGaris() {
+      measureLayer.clearLayers();
+      tempLine = null;
+      pointA = null;
+    }
+
+    function locateUser() {
+      if (!navigator.geolocation) return alert("Browser tidak mendukung geolokasi.");
+      navigator.geolocation.getCurrentPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+        L.marker([latitude, longitude]).addTo(map)
+          .bindPopup("📍 Lokasi Anda").openPopup();
+        map.setView([latitude, longitude], 16);
+      });
+    }
+  </script>
+</body>
+</html>
